@@ -11,7 +11,7 @@ import { TAB_ID } from '../../../../providers/tab-id.provider';
 export class PopupComponent {
   message: string;
 
-  constructor(@Inject(TAB_ID) readonly tabId: number) {}
+  constructor(@Inject(TAB_ID) readonly tabId: number) { }
 
   async onClick(): Promise<void> {
     this.message = await bindCallback<string>(chrome.tabs.sendMessage.bind(this, this.tabId, 'request'))()
@@ -23,5 +23,11 @@ export class PopupComponent {
         )
       )
       .toPromise();
+  }
+
+  ngOnInit(): void {
+    //Called after the constructor, initializing input properties, and the first call to ngOnChanges.
+    //Add 'implements OnInit' to the class.
+
   }
 }

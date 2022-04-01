@@ -1,32 +1,39 @@
 {
   "manifest_version": 3,
-  "name": "extension",
-  "short_name": "extension",
-  "version": "1.0.0",
-  "description": "Generated with @larscom/ng-chrome-extension",
+  "name": "iQuestBee Proctoring",
+  "short_name": "iQuestBee Proctoring",
+  "version": "1.0.6",
+  "description": "Extension to proctor candidate",
   "permissions": [
-    "tabs"
+    "webNavigation",
+    "desktopCapture",
+    "tabs",
+    "storage",
+    "scripting",
+    "system.cpu",
+    "system.memory",
+    "system.storage",
+    "system.display"
   ],
+  "icons": {
+    "16": "/assets/codejudge-logo-16-16.png",
+    "32": "/assets/codejudge-logo-32-32.png",
+    "48": "/assets/codejudge-logo-64-64.png",
+    "128": "/assets/codejudge-logo-128-128.png"
+  },
   "action": {
-    "default_popup": "index.html?#/popup",
-    "default_title": "Angular Chrome Extension"
+    "default_title": "iQuestBee Proctoring"
   },
-  "options_page": "index.html?#/options",
-  "chrome_url_overrides": {
-    "newtab": "index.html?#/tab"
-  },
-  "content_scripts": [
-    {
-      "js": [
-        "contentPage.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ],
   "background": {
     "service_worker": "serviceWorker.js"
+  },
+  "host_permissions": [
+    "*://*.iquestbee.com/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "*://*.iquestbee.com/*"
+    ]
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
