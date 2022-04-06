@@ -1,14 +1,17 @@
+import { bindCallback } from 'rxjs';
 import { Constants } from "./constants"
 
 let onBoundsChangedListener;
 
 chrome.runtime.onInstalled.addListener(() => {
-    chrome.storage.local.clear();
+    chrome.storage.local.get(null, (items) => {
+
+    })
 });
 
 chrome.runtime.onConnect.addListener(() => { });
 
-chrome.runtime.onMessageExternal.addListener((message, sender, senderResponse) => {
+chrome.runtime.onMessageExternal.addListener(async (message, sender, senderResponse) => {
     switch (message && message.type) {
         case Constants.SCREEN_RECORD: chooseDesktopMedia(message, sender, senderResponse); break;
         case Constants.SCREEN_AND_CAMERA: chooseDesktopMedia(message, sender, senderResponse); break;
@@ -22,6 +25,8 @@ chrome.runtime.onMessageExternal.addListener((message, sender, senderResponse) =
         case Constants.RELOAD_EXTENSION: reloadExtension(); break;
         case Constants.START_FULLSCREEN: goToFullScreen(message, sender, senderResponse); break;
         case Constants.STOP_PROCTOR: stopProctoringExtension(sender, message, senderResponse); break;
+        case Constants.SYSTEM_DETAILS: getSystemDetails(senderResponse); break;
+        case Constants.cancelChooseDesktopMedia: cancelChooseDesktopMedia(); senderResponse(); break;
     }
     return true;
 })
@@ -33,11 +38,13 @@ chrome.runtime.onUpdateAvailable.addListener(evt => {
 })
 
 
-function chooseDesktopMedia(message: any, sender: chrome.runtime.MessageSender, senderResponse): void {
-    chrome.desktopCapture.chooseDesktopMedia(["screen"], sender.tab, (streamId) => {
+async function chooseDesktopMedia(message: any, sender: chrome.runtime.MessageSender, senderResponse) {
+    await cancelChooseDesktopMedia();
+    const desktopMediaRequestId = chrome.desktopCapture.chooseDesktopMedia(["screen"], sender.tab, (streamId) => {
         if (streamId && streamId.length) sendMessageToTab(sender.tab.id, { ...message, streamId }, senderResponse);
         else senderResponse({ success: false, type: Constants.SCREEN_ACCESS_DENIED });
     })
+    chrome.storage.local.set({ desktopMediaRequestId });
 }
 
 
@@ -98,6 +105,7 @@ function onBoundsChanged(sender: chrome.runtime.MessageSender, changedWindow: ch
                 }
             })
         } else {
+            sendMessageToTab(sender.tab.id, { message: 'Removing Listener' });
             chrome.windows.onBoundsChanged.removeListener(onBoundsChangedListener);
         }
     })
@@ -118,17 +126,40 @@ function sendMessageToTab(tabId: number, message, senderResponse?) {
 }
 
 
-function setLocalStorage(data): void {
-    try {
-        if (chrome && chrome.storage && chrome.storage.local)
-            chrome.storage.local.set(data);
-    } catch (error) {
-
-    }
-}
-
 function stopProctoringExtension(sender: chrome.runtime.MessageSender, message, senderResponse) {
     sendMessageToTab(sender.tab.id, message, senderResponse)
     chrome.windows.onBoundsChanged.removeListener(onBoundsChangedListener);
+    cancelChooseDesktopMedia();
     onBoundsChangedListener = null;
 }
+
+
+async function getSystemDetails(senderResponse) {
+    const cpu = await bindCallback<string>(chrome.system.cpu.getInfo.bind(this))().toPromise();
+    const display = await bindCallback<string>(chrome.system.display.getInfo.bind(this))().toPromise();
+    const memory = await bindCallback<string>(chrome.system.memory.getInfo.bind(this))().toPromise();
+    const storage = await bindCallback<string>(chrome.system.storage.getInfo.bind(this))().toPromise();
+    const platformInfo = await bindCallback<string>(chrome.runtime.getPlatformInfo.bind(this))().toPromise();
+    senderResponse({ cpu, display, memory, storage, platformInfo })
+}
+
+
+function cancelChooseDesktopMedia(): Promise<boolean> {
+    return new Promise(resolve => {
+        chrome.storage.local.get(['desktopMediaRequestId'], ({ desktopMediaRequestId }) => {
+            console.log(desktopMediaRequestId);
+            if (desktopMediaRequestId) { chrome.desktopCapture.cancelChooseDesktopMedia(desktopMediaRequestId) };
+            return resolve(desktopMediaRequestId ? true : false)
+        })
+    })
+}
+
+
+chrome.runtime.onSuspend.addListener(() => {
+    console.log('Extension Suspended')
+    cancelChooseDesktopMedia();
+});
+
+
+
+

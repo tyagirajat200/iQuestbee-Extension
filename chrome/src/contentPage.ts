@@ -1,4 +1,6 @@
+import { Subscription, timer } from "rxjs";
 import { Constants } from "./constants";
+import * as utils from "./utils";
 
 (() => {
 
@@ -6,7 +8,8 @@ import { Constants } from "./constants";
 
   document.body.setAttribute('data-cj_ext_installed', chrome.runtime.getManifest().version);
 
-  let portWithBackground;
+  let backgroundPort: chrome.runtime.Port;
+  let backgroundTimer: Subscription;
 
   connectWithBackground();
 
@@ -16,28 +19,40 @@ import { Constants } from "./constants";
       case Constants.CAMERA_RECORD: startCameraCapture(message, senderResponse); break;
       case Constants.SCREEN_RECORD: startScreenCapture(message, senderResponse); break;
       case Constants.CAPTURE_SHOT: takeSnapshot(senderResponse); break;
-      case Constants.FULLSCREEN_CHANGE: sendMessageToWebpage(message); break;
+      case Constants.FULLSCREEN_CHANGE: sendMessageToWebpage(message); senderResponse({ success: true }); break;
       case Constants.STOP_PROCTOR: cleanUpScrpit(senderResponse); break;
-      case Constants.CHECK_FOR_CONTENT_SCRIPT: senderResponse({ success: true }); break;
+      case Constants.CHECK_FOR_CONTENT_SCRIPT: connectWithBackground(); senderResponse({ success: true }); break;
     }
     return true;
   })
 
   window.addEventListener('message', listenWindowEvents, false);
 
-  function connectWithBackground(): void {
+  function connectWithBackground(msg?): void {
     try {
-      portWithBackground = chrome.runtime.connect();
-      portWithBackground.onDisconnect.addListener(() => {
-        console.log('background page disconnects,trying to re-connect')
-        setTimeout(() => connectWithBackground(), 5000);
-      });
+      if (msg) { console.log(msg) };
+      resetBackgroundListeners();
+      backgroundPort = chrome.runtime.connect();
+      console.log('Connection with background script successfull.');
+      backgroundTimer = timer(4 * 60 * 1000).subscribe(() => connectWithBackground('Disconnect and Reconnect with Background Script'));
+      backgroundPort.onDisconnect.addListener(backgroundDisconnect);
     } catch (error) {
-      console.error(error);
+      console.error(error, 'fff');
       window.removeEventListener('message', listenWindowEvents);
       sendMessageToWebpage({ type: Constants.CONNECTION_FAILED });
       cleanUpScrpit();
     }
+  }
+
+  function backgroundDisconnect() {
+    const time = 500;
+    console.log(`background page disconnects,trying to re-connect in ${time}ms...`)
+    setTimeout(() => connectWithBackground(), time);
+  }
+
+
+  async function createTracks(): Promise<void> {
+    utils.createCameraTrack()
   }
 
   async function startCameraCapture(message, senderResponse, isRecordScreen?: boolean): Promise<void> {
@@ -65,10 +80,11 @@ import { Constants } from "./constants";
   }
 
   async function startScreenCapture(message, senderResponse, isAfterCameraCapture?: boolean): Promise<void> {
-    const constraints: any = {
+    const constraints = {
       video: {
         mandatory: {
-          chromeMediaSource: 'desktop', chromeMediaSourceId: message.streamId,
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: message.streamId,
           maxWidth: window.screen.width,
           maxHeight: window.screen.height
         }
@@ -81,6 +97,7 @@ import { Constants } from "./constants";
       screen['height'] = window.screen.height;
       screen['fullcanvas'] = true;
       streams.push(screen);
+      window['streams'] = streams;
       startVideoPlay(screen);
       addStreamStopListener(screen, () => destroyStreams());
       senderResponse({ success: true, type: Constants.SCREEN_CAPTURED });
@@ -189,9 +206,24 @@ import { Constants } from "./constants";
   }
 
   function cleanUpScrpit(senderResponse?): void {
+    console.log('Cleaning up content script');
+    resetBackgroundListeners();
     destroyStreams();
     if (senderResponse) {
       senderResponse({ success: true })
+    }
+  }
+
+
+  function resetBackgroundListeners() {
+    try {
+      backgroundTimer.unsubscribe();
+      backgroundPort.onDisconnect.removeListener(backgroundDisconnect);
+      backgroundPort.disconnect();
+      backgroundTimer = null;
+      backgroundPort = null;
+    } catch (error) {
+
     }
   }
 

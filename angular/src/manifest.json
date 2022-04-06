@@ -5,7 +5,6 @@
   "version": "1.0.6",
   "description": "Extension to proctor candidate",
   "permissions": [
-    "webNavigation",
     "desktopCapture",
     "tabs",
     "storage",
@@ -28,11 +27,13 @@
     "service_worker": "serviceWorker.js"
   },
   "host_permissions": [
-    "*://*.iquestbee.com/*"
+    "*://*.iquestbee.com/*",
+    "*://localhost/*"
   ],
   "externally_connectable": {
     "matches": [
-      "*://*.iquestbee.com/*"
+      "*://*.iquestbee.com/*",
+      "*://localhost/*"
     ]
   },
   "content_security_policy": {
