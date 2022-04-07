@@ -1,10 +1,10 @@
 import { Subscription, timer } from "rxjs";
 import { Constants } from "./constants";
-import * as utils from "./utils";
+import * as player from "./player";
 
 (() => {
 
-  let streams: MediaStream[] = [];
+  let tracks: player.LocalVideoTrack[] = []
 
   document.body.setAttribute('data-cj_ext_installed', chrome.runtime.getManifest().version);
 
@@ -15,10 +15,10 @@ import * as utils from "./utils";
 
   chrome.runtime.onMessage.addListener((message, sender, senderResponse) => {
     switch (message && message.type) {
-      case Constants.SCREEN_AND_CAMERA: startCameraCapture(message, senderResponse, true); break;
-      case Constants.CAMERA_RECORD: startCameraCapture(message, senderResponse); break;
-      case Constants.SCREEN_RECORD: startScreenCapture(message, senderResponse); break;
-      case Constants.CAPTURE_SHOT: takeSnapshot(senderResponse); break;
+      case Constants.SCREEN_AND_CAMERA: createTracks(message, senderResponse); break;
+      case Constants.CAMERA_RECORD: createTracks(message, senderResponse); break;
+      case Constants.SCREEN_RECORD: createTracks(message, senderResponse); break;
+      case Constants.CAPTURE_SHOT: takeSnapshot(senderResponse, message); break;
       case Constants.FULLSCREEN_CHANGE: sendMessageToWebpage(message); senderResponse({ success: true }); break;
       case Constants.STOP_PROCTOR: cleanUpScrpit(senderResponse); break;
       case Constants.CHECK_FOR_CONTENT_SCRIPT: connectWithBackground(); senderResponse({ success: true }); break;
@@ -34,10 +34,10 @@ import * as utils from "./utils";
       resetBackgroundListeners();
       backgroundPort = chrome.runtime.connect();
       console.log('Connection with background script successfull.');
-      backgroundTimer = timer(4 * 60 * 1000).subscribe(() => connectWithBackground('Disconnect and Reconnect with Background Script'));
+      // backgroundTimer = timer(4 * 60 * 1000).subscribe(() => connectWithBackground('Disconnect and Reconnect with Background Script'));
       backgroundPort.onDisconnect.addListener(backgroundDisconnect);
     } catch (error) {
-      console.error(error, 'fff');
+      console.error(error);
       window.removeEventListener('message', listenWindowEvents);
       sendMessageToWebpage({ type: Constants.CONNECTION_FAILED });
       cleanUpScrpit();
@@ -51,150 +51,62 @@ import * as utils from "./utils";
   }
 
 
-  async function createTracks(): Promise<void> {
-    utils.createCameraTrack()
-  }
-
-  async function startCameraCapture(message, senderResponse, isRecordScreen?: boolean): Promise<void> {
-    const constraints = { audio: false, video: true };
+  async function createTracks(message, senderResponse): Promise<void> {
+    const type = message ? message.type : null;
+    tracks = tracks.filter(x => x.isActive);
+    const data: player.LocalVideoTrack[] = [];
     try {
-      const camera = await startCapture(constraints);
-      camera['mediaType'] = Constants.CAMERA;
-      camera['width'] = camera.getVideoTracks()[0].getSettings().width;
-      camera['height'] = camera.getVideoTracks()[0].getSettings().height;
-      camera['fullcanvas'] = true;
-      streams.push(camera);
-      startVideoPlay(camera);
-      if (isRecordScreen) {
-        console.log('camera captured...');
-        startScreenCapture(message, senderResponse, true);
-      } else {
-        addStreamStopListener(camera, () => destroyStreams());
-        senderResponse({ success: true, type: Constants.CAMERA_CAPTURED });
-        console.log('camera captured...');
+      if (type === Constants.SCREEN_AND_CAMERA) {
+        const a = await player.createScreenAndCameraTrack(message.screen, message.camera); a.forEach(x => x.play()); data.push(...a);
+      } else if (type === Constants.CAMERA_RECORD) {
+        const track = await player.createCameraTrack(message.camera); track.play(); data.push(track);
+      } else if (type === Constants.SCREEN_RECORD) {
+        const track = await player.createScreenVideoTrack(message.screen); track.play(); data.push(track);
       }
+      if (message.addListener !== false) {
+        data.forEach(x => x.onStreamStop().subscribe(res => sendMessageToWebpage({ success: true, mediaType: x.mediaType, kind: x.kind, type: Constants.STREAM_STOPPED })));
+      }
+      tracks.push(...data)
+      senderResponse({ success: true, type });
     } catch (error) {
-      console.error(error)
-      senderResponse({ success: false, type: Constants.CAMERA_ACCESS_DENIED })
+      console.error(error);
+      senderResponse(error)
     }
   }
 
-  async function startScreenCapture(message, senderResponse, isAfterCameraCapture?: boolean): Promise<void> {
-    const constraints = {
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: message.streamId,
-          maxWidth: window.screen.width,
-          maxHeight: window.screen.height
+
+  function destroyStreams(): void {
+    tracks.forEach(x => x.stop());
+    tracks = [];
+  }
+
+
+  async function takeSnapshot(senderResponse, message) {
+    try {
+      const video_streams = tracks.filter(x => x.isActive && x.kind === Constants.VIDEO);
+      let dataUrls = [];
+      if (video_streams.length) {
+        if (video_streams.length === 2) {
+          const data_url1 = await video_streams.find(x => x.mediaType === Constants.SCREEN).getCurrentFrameData();
+          const data_url2 = await video_streams.find(x => x.mediaType === Constants.CAMERA).getCurrentFrameData();
+          const url = await player.getCombinedSnapshot(data_url1, data_url2, message.x, message.y);
+          dataUrls.push({ url, mediaType: Constants.SCREEN });
+          dataUrls.push({ url: data_url2, mediaType: Constants.CAMERA });
+        } else {
+          const url = await video_streams[0].getCurrentFrameData();
+          dataUrls.push({ url, mediaType: video_streams[0].mediaType });
         }
-      }
-    }
-    try {
-      const screen = await startCapture(constraints);
-      screen['mediaType'] = Constants.SCREEN;
-      screen['width'] = window.screen.width;
-      screen['height'] = window.screen.height;
-      screen['fullcanvas'] = true;
-      streams.push(screen);
-      window['streams'] = streams;
-      startVideoPlay(screen);
-      addStreamStopListener(screen, () => destroyStreams());
-      senderResponse({ success: true, type: Constants.SCREEN_CAPTURED });
-      console.log('screen captured...');
-    } catch (error) {
-      console.error(error)
-      senderResponse({ success: false, type: Constants.SCREEN_ACCESS_DENIED })
-    }
-  }
-
-  function startCapture(constraints): Promise<MediaStream> {
-    return new Promise((resolve, reject) => {
-      if (navigator && navigator.mediaDevices.getUserMedia && navigator.mediaDevices.getUserMedia)
-        navigator.mediaDevices.getUserMedia(constraints).then(resolve).catch(reject);
-      else {
-        reject('mediaDevices not supported');
-      }
-    })
-  }
-
-  function addStreamStopListener(stream: MediaStream, callback) {
-    if (stream) {
-      stream.getTracks().forEach((track) => {
-        track.addEventListener('ended', callback, false);
-      });
-    }
-  }
-
-
-  function destroyStreams() {
-    streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
-    streams = [];
-    destroyVideoElements();
-    sendMessageToWebpage({ success: true, type: Constants.STREAM_STOPPED });
-  }
-
-
-  async function takeSnapshot(senderResponse) {
-    if (streams && streams.length > 0) {
-      try {
-        const dataUrls = [];
-        // canvas for screen
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = streams[1]['width'];
-        canvas.height = streams[1]['height'];
-        const track1 = streams[1].getVideoTracks()[0];
-        // @ts-ignore: Unreachable code error
-        let imageCapture1 = new ImageCapture(track1);
-        const imageBitmap1 = await imageCapture1.grabFrame();
-        context.drawImage(imageBitmap1, 0, 0, streams[1]['width'], streams[1]['height']);
-
-        // canvas for user video
-        const canvas_user = document.createElement('canvas');
-        const context_user = canvas_user.getContext('2d');
-        canvas_user.width = streams[0]['width'];
-        canvas_user.height = streams[0]['height'];
-        const track2 = streams[0].getVideoTracks()[0];
-        // @ts-ignore: Unreachable code error
-        let imageCapture2 = new ImageCapture(track2);
-        const imageBitmap2 = await imageCapture2.grabFrame();
-        context.drawImage(imageBitmap2, streams[1]['width'] - 500, streams[1]['height'] - 400, streams[0]['width'], streams[0]['height']);
-        context_user.drawImage(imageBitmap2, 0, 0, streams[0]['width'], streams[0]['height']);
-
-        const screenUrl = await canvas.toDataURL('image/jpeg', 0.2);
-        dataUrls.push({ url: screenUrl, mediaType: Constants.SCREEN });
-        const userUrl = await canvas_user.toDataURL('image/jpeg', 0.2);
-        dataUrls.push({ url: userUrl, mediaType: Constants.CAMERA });
         senderResponse({ success: true, type: Constants.SNAPSHOT_CAPTURED, dataUrls: dataUrls })
-      } catch (error) {
-        console.error(error)
+      } else {
+        console.error('no MediaStream found to capture');
         senderResponse({ success: false, type: Constants.SNAPSHOT_FAILED })
       }
-    } else {
-      console.log('no MediaStream found to capture');
+    } catch (error) {
+      console.error(error);
       senderResponse({ success: false, type: Constants.SNAPSHOT_FAILED })
     }
   }
 
-
-  function startVideoPlay(stream: MediaStream): void {
-    const element = document.createElement('video');
-    element.id = `${stream['mediaType']}_EXT_VIDEO`
-    element.srcObject = stream;
-    element.autoplay = false;
-    element.style.display = 'none';
-    document.body.appendChild(element);
-  }
-
-
-  function destroyVideoElements(): void {
-    const id = ['CAMERA_EXT_VIDEO', 'SCREEN_EXT_VIDEO']
-    for (let index = 0; index < 2; index++) {
-      const element = document.getElementById(id[index]);
-      if (element) element.remove();
-    }
-  }
 
   function listenWindowEvents(event: MessageEvent<any>): void {
     // We only accept messages from ourselves
@@ -206,20 +118,18 @@ import * as utils from "./utils";
   }
 
   function cleanUpScrpit(senderResponse?): void {
-    console.log('Cleaning up content script');
+    console.log('cleaning up content script...');
     resetBackgroundListeners();
     destroyStreams();
-    if (senderResponse) {
-      senderResponse({ success: true })
-    }
+    senderResponse?.({ success: true });
   }
 
 
   function resetBackgroundListeners() {
     try {
-      backgroundTimer.unsubscribe();
-      backgroundPort.onDisconnect.removeListener(backgroundDisconnect);
-      backgroundPort.disconnect();
+      backgroundTimer?.unsubscribe();
+      backgroundPort?.onDisconnect.removeListener(backgroundDisconnect);
+      backgroundPort?.disconnect();
       backgroundTimer = null;
       backgroundPort = null;
     } catch (error) {

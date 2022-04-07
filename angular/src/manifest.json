@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "iQuestBee Proctoring",
   "short_name": "iQuestBee Proctoring",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Extension to proctor candidate",
   "permissions": [
     "desktopCapture",
@@ -11,7 +11,6 @@
     "scripting",
     "system.cpu",
     "system.memory",
-    "system.storage",
     "system.display"
   ],
   "icons": {
@@ -27,13 +26,11 @@
     "service_worker": "serviceWorker.js"
   },
   "host_permissions": [
-    "*://*.iquestbee.com/*",
-    "*://localhost/*"
+    "*://*.iquestbee.com/*"
   ],
   "externally_connectable": {
     "matches": [
-      "*://*.iquestbee.com/*",
-      "*://localhost/*"
+      "*://*.iquestbee.com/*"
     ]
   },
   "content_security_policy": {
