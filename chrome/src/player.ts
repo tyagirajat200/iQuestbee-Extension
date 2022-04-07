@@ -15,7 +15,7 @@ export class LocalVideoTrack {
         this.trackId = track.id;
         this.mediaType = mediaType;
         this.config = config || {};
-        this.config.elementId = this.config.elementId ? this.config.elementId : 'video-player-'.concat(this.mediaType);
+        this.config.elementId = this.config.elementId ? this.config.elementId : 'video-player-'.concat(this.mediaType.toLowerCase());
         this.track.onended = () => { this._onStreamStop.next(true); this.stop(); }
     }
 
@@ -30,7 +30,7 @@ export class LocalVideoTrack {
 
     play() {
         if (this.track) {
-            this._player ? this._player.updateConfig(this.config, this.track) : (this._player = new VideoPlayer(this.config, this.track));
+            this._player ? this._player.updateConfig(this.config, this.track, this.mediaType) : (this._player = new VideoPlayer(this.config, this.track, this.mediaType));
             this._player.play();
         }
     }
@@ -52,12 +52,13 @@ class VideoPlayer {
     private trackId: string;
     private slot: HTMLDivElement | HTMLElement;
     private videoTrack: MediaStreamTrack;
+    private mediaType: string;
     private config;
     private isSlotPresent: boolean;
-    constructor(config, track: MediaStreamTrack) {
-        this.updateConfig(config, track);
+    constructor(config, track: MediaStreamTrack, mediaType: string) {
+        this.updateConfig(config, track, mediaType);
     }
-    updateConfig(config, track: MediaStreamTrack) {
+    updateConfig(config, track: MediaStreamTrack, mediaType) {
         this.destroy();
         const element = document.getElementById(config.elementId);
         if (!element) {
@@ -65,8 +66,14 @@ class VideoPlayer {
             this.slot = document.createElement('div');
             this.slot.id = config.elementId;
             this.slot.style.display = 'none';
-            this.slot.style.height = '200px';
-            this.slot.style.width = '200px'
+            this.slot.style.height = '140px';
+            this.slot.style.width = '200px';
+            this.slot.style.zIndex = '999';
+            this.slot.style.bottom = '10px';
+            this.slot.style.right = mediaType === Constants.CAMERA ? '10px' : '220px';
+            this.slot.style.position = 'fixed';
+            this.slot.style.borderRadius = '10px';
+            this.slot.style.boxShadow = '0 4px 8px 0 #00000033, 0 6px 20px 0 #00000030';
             document.body.appendChild(this.slot);
         } else {
             while (element.lastElementChild) {
@@ -77,6 +84,7 @@ class VideoPlayer {
         }
 
         this.config = config;
+        this.mediaType = this.mediaType
         this.updateVideoTrack(track)
     }
     updateVideoTrack(track: MediaStreamTrack) {
@@ -124,6 +132,7 @@ class VideoPlayer {
         this.container.style.height = "100%";
         this.container.style.position = "relative";
         this.container.style.overflow = "hidden";
+        this.container.style.borderRadius = '10px';
         this.videoTrack ? (this.container.style.backgroundColor = "black", this.createVideoElement(), this.container.appendChild(this.videoElement)) : this.removeVideoElement();
         this.slot.appendChild(this.container)
     }
