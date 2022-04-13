@@ -73,7 +73,7 @@ class VideoPlayer {
             this.slot.style.right = mediaType === Constants.CAMERA ? '10px' : '220px';
             this.slot.style.position = 'fixed';
             this.slot.style.borderRadius = '10px';
-            this.slot.style.boxShadow = '0 4px 8px 0 #00000033, 0 6px 20px 0 #00000030';
+            this.slot.style.boxShadow = '0px 1px 3px 0px #3c40434d, 0px 4px 8px 3px #3c404326';
             document.body.appendChild(this.slot);
         } else {
             while (element.lastElementChild) {

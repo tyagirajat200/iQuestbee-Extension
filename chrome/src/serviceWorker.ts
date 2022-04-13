@@ -25,7 +25,7 @@ chrome.runtime.onMessageExternal.addListener(async (message, sender, senderRespo
     return true;
 })
 
-chrome.windows.onBoundsChanged.addListener(changeWindow => {
+chrome.windows.onBoundsChanged?.addListener(changeWindow => {
     chrome.windows.get(changeWindow.id, { populate: true }, (window) => {
         (window.tabs || []).forEach(x => sendMessageToTab(x.id, { type: Constants.FULLSCREEN_CHANGE, state: window.state }));
 
@@ -62,7 +62,7 @@ function checkForContentScripts(message, sender: chrome.runtime.MessageSender, s
 }
 
 function inject_content_scripts(message, sender: chrome.runtime.MessageSender, senderResponse) {
-    chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['contentPage.js'] }, (injectionResults) => {
+    chrome.scripting?.executeScript({ target: { tabId: sender.tab.id }, files: ['contentPage.js'] }, (injectionResults) => {
         if (injectionResults && injectionResults.length > 0) {
             senderResponse({ success: true, type: Constants.CONTENT_SCRIPT_INJECTED });
         }
@@ -86,8 +86,9 @@ function reloadExtension(): void {
 }
 
 function goToFullScreen(message: any, sender: chrome.runtime.MessageSender, senderResponse): void {
-    chrome.windows.update(sender.tab.windowId, { state: 'fullscreen', focused: true });
-    senderResponse({ success: true })
+    chrome.windows.update(sender.tab.windowId, { state: 'fullscreen', focused: true }, (window) => {
+        senderResponse({ success: window.state === 'fullscreen' ? true : false });
+    });
 }
 
 
