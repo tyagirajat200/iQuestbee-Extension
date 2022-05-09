@@ -12,6 +12,7 @@ chrome.runtime.onMessageExternal.addListener(async (message, sender, senderRespo
         case Constants.SCREEN_AND_CAMERA: chooseDesktopMedia(message, sender, senderResponse); break;
         case Constants.CAMERA_RECORD: sendMessageToTab(sender.tab.id, message, senderResponse); break;
         case Constants.CAPTURE_SHOT: sendMessageToTab(sender.tab.id, message, senderResponse); break;
+        case Constants.GET_DESKTOP_SHARE_ID: getDeskstopRequestId(message, sender, senderResponse); break;
         case Constants.VERSION_INFO: senderResponse(chrome.runtime.getManifest());
         case Constants.CHECK_FOR_CONTENT_SCRIPT: checkForContentScripts(message, sender, senderResponse); break;
         case Constants.INJECT_CONTENT_SCRIPTS: inject_content_scripts(message, sender, senderResponse); break;
@@ -20,7 +21,10 @@ chrome.runtime.onMessageExternal.addListener(async (message, sender, senderRespo
         case Constants.RELOAD_EXTENSION: reloadExtension(); break;
         case Constants.START_FULLSCREEN: goToFullScreen(message, sender, senderResponse); break;
         case Constants.STOP_PROCTOR: stopProctoringExtension(sender, message, senderResponse); break;
+        case Constants.STOP_CAMERA: stopProctoringExtension(sender, message, senderResponse); break;
+        case Constants.STOP_SCREEN: stopProctoringExtension(sender, message, senderResponse); break;
         case Constants.SYSTEM_DETAILS: getSystemDetails(senderResponse); break;
+        case Constants.CLOSE_TABS: closeTabsById(message, senderResponse); break;
     }
     return true;
 })
@@ -28,9 +32,9 @@ chrome.runtime.onMessageExternal.addListener(async (message, sender, senderRespo
 chrome.windows.onBoundsChanged?.addListener(changeWindow => {
     chrome.windows.get(changeWindow.id, { populate: true }, (window) => {
         (window.tabs || []).forEach(x => sendMessageToTab(x.id, { type: Constants.FULLSCREEN_CHANGE, state: window.state }));
-
     })
 });
+
 
 
 //listen for and restart on updates (though not if recording in progress)
@@ -50,24 +54,32 @@ async function chooseDesktopMedia(message: any, sender: chrome.runtime.MessageSe
 }
 
 
+async function getDeskstopRequestId(message: any, sender: chrome.runtime.MessageSender, senderResponse) {
+    await cancelChooseDesktopMedia();
+    const desktopMediaRequestId = chrome.desktopCapture.chooseDesktopMedia(["screen"], sender.tab, (streamId) => senderResponse({ success: streamId && streamId.length ? true : false, type: Constants.GET_DESKTOP_SHARE_ID, streamId }))
+    chrome.storage.local.set({ desktopMediaRequestId });
+}
+
+
+
+
 // if message.canInject is true then it will inject new content script otherwise it will only check  the status
 function checkForContentScripts(message, sender: chrome.runtime.MessageSender, senderResponse): void {
     chrome.tabs.sendMessage(sender.tab.id, { type: message.type }, (response) => {
         if (response && response.success) {
-            senderResponse({ success: true, type: Constants.CONTENT_SCRIPT_INJECTED });
+            senderResponse({ success: true, type: Constants.CONTENT_SCRIPT_INJECTED, manifest: chrome.runtime.getManifest() });
         }
         else if (message.canInject) inject_content_scripts(message, sender, senderResponse);
-        else senderResponse({ success: false, type: Constants.CONTENT_SCRIPT_FAILED })
+        else senderResponse({ success: false, type: Constants.CONTENT_SCRIPT_FAILED, manifest: chrome.runtime.getManifest() })
     });
 }
 
 function inject_content_scripts(message, sender: chrome.runtime.MessageSender, senderResponse) {
     chrome.scripting?.executeScript({ target: { tabId: sender.tab.id }, files: ['contentPage.js'] }, (injectionResults) => {
         if (injectionResults && injectionResults.length > 0) {
-            senderResponse({ success: true, type: Constants.CONTENT_SCRIPT_INJECTED });
+            senderResponse({ success: true, type: Constants.CONTENT_SCRIPT_INJECTED, manifest: chrome.runtime.getManifest() });
         }
-        else senderResponse({ success: false, type: Constants.CONTENT_SCRIPT_FAILED });
-
+        else senderResponse({ success: false, type: Constants.CONTENT_SCRIPT_FAILED, manifest: chrome.runtime.getManifest() });
     })
 }
 
@@ -94,9 +106,17 @@ function goToFullScreen(message: any, sender: chrome.runtime.MessageSender, send
 
 function getAllOpenTabs(message?, sender?: chrome.runtime.MessageSender, senderResponse?): void {
     chrome.tabs.query({}, (result) => {
-        const tabs = result.map(tab => { return { url: tab.url, title: tab.title, incognito: tab.incognito, pendingUrl: tab.pendingUrl } })
-        senderResponse({ tabs })
+        const currentTab = result.find(x => x.id === sender.tab.id)
+        const tabs = result.filter(x => x.id !== sender.tab.id)
+        senderResponse({ tabs, currentTab })
     });
+}
+
+function closeTabsById(message, senderResponse): void {
+    if (message && message.tabs && message.tabs.length) {
+        message.tabs.forEach(x => chrome.tabs.remove(x.id))
+    }
+    senderResponse({ success: true });
 }
 
 function sendMessageToTab(tabId: number, message, senderResponse?) {
@@ -115,7 +135,8 @@ async function getSystemDetails(senderResponse) {
     const display = await bindCallback<string>(chrome.system.display.getInfo.bind(this))().toPromise();
     const memory = await bindCallback<string>(chrome.system.memory.getInfo.bind(this))().toPromise();
     const platformInfo = await bindCallback<string>(chrome.runtime.getPlatformInfo.bind(this))().toPromise();
-    senderResponse({ cpu, display, memory, platformInfo })
+    const manifest = chrome.runtime.getManifest();
+    senderResponse({ cpu, display, memory, platformInfo, manifest })
 }
 
 
@@ -127,7 +148,4 @@ function cancelChooseDesktopMedia(): Promise<boolean> {
         })
     })
 }
-
-
-
 

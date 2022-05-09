@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "iQuestBee Proctoring",
   "short_name": "iQuestBee Proctoring",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Extension to proctor candidate",
   "permissions": [
     "desktopCapture",

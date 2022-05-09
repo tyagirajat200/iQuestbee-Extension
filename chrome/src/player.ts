@@ -15,7 +15,7 @@ export class LocalVideoTrack {
         this.trackId = track.id;
         this.mediaType = mediaType;
         this.config = config || {};
-        this.config.elementId = this.config.elementId ? this.config.elementId : 'video-player-'.concat(this.mediaType.toLowerCase());
+        this.config.elementId = this.config.elementId || 'video-player-'.concat(this.mediaType.toLowerCase());
         this.track.onended = () => { this._onStreamStop.next(true); this.stop(); }
     }
 
@@ -84,7 +84,7 @@ class VideoPlayer {
         }
 
         this.config = config;
-        this.mediaType = this.mediaType
+        this.mediaType = mediaType
         this.updateVideoTrack(track)
     }
     updateVideoTrack(track: MediaStreamTrack) {
@@ -112,7 +112,7 @@ class VideoPlayer {
             canvas.remove();
             return Promise.resolve(url)
         } catch (error) {
-            console.log(error)
+            console.error(error)
             return Promise.reject(error)
         }
     }
@@ -195,13 +195,13 @@ export async function getCombinedSnapshot(url1, url2, x = 500, y = 400): Promise
 
 
 export async function createCameraTrack(config: any = {}): Promise<LocalVideoTrack> {
-    config.constraints = config.constraints || {};
+    config.constraints = config.constraints || getContraints().camera || {};
     config.constraints = { audio: false, video: true, ...config.constraints };
     return startCapture(config, Constants.CAMERA);
 }
 
 export async function createScreenVideoTrack(config: any = {}): Promise<LocalVideoTrack> {
-    config.constraints = config.constraints || {};
+    config.constraints = config.constraints || getContraints().screen || {};
     config.constraints = {
         video: {
             mandatory: {
@@ -213,7 +213,6 @@ export async function createScreenVideoTrack(config: any = {}): Promise<LocalVid
         },
         ...config.constraints
     }
-
     return startCapture(config, Constants.SCREEN);
 }
 
@@ -242,6 +241,7 @@ async function startCapture(config, mediaType): Promise<LocalVideoTrack> {
             const stream = await navigator.mediaDevices.getUserMedia(config.constraints);
             return Promise.resolve(transformMediaStream(stream, mediaType, config))
         } catch (error) {
+            console.error(error)
             return Promise.reject(getMediadevicesError({ error, mediaType }))
         }
     else {
@@ -250,6 +250,11 @@ async function startCapture(config, mediaType): Promise<LocalVideoTrack> {
 }
 
 function getMediadevicesError({ error, mediaType }): any {
-    const data = { error, type: mediaType === Constants.CAMERA ? Constants.CAMERA_ACCESS_DENIED : Constants.SCREEN_ACCESS_DENIED, success: false }
+    const data = { error: { name: error.name, message: error.message, code: error.code, constraint: error.constraint, ...error }, type: mediaType === Constants.CAMERA ? Constants.CAMERA_ACCESS_DENIED : Constants.SCREEN_ACCESS_DENIED, success: false }
     return data;
+}
+
+function getContraints(): any {
+    const constraints = localStorage.getItem('constraints') ? JSON.parse(localStorage.getItem('constraints')) : {}
+    return { camera: { ...constraints.camera }, screen: { ...constraints.screen } }
 }
